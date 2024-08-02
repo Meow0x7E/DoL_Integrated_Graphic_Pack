@@ -1,6 +1,6 @@
 #!/usr/bin/zsh
 
-typeset log_header="[make]"
+typeset version='0.2.0.1'
 typeset -A Log=()
 
 #[AutomaticDerive]
@@ -31,7 +31,7 @@ function log() {
     && print -u 2 -f "[%s;1m[%s]%s: %s[0m\n" $Log[$1,color] $Log[$1,level] $log_header $2
 }
 
-typeset -ar ModeListData=(
+typeset -a ModeListData=(
     # 游戏原版图片包
     'GameOriginalImagePack;1'
     # BEEESSS 美化
@@ -52,144 +52,46 @@ typeset -ar ModeListData=(
 
 typeset -a ModeListFromName=()
 typeset -A ModeList=()
-
-typeset -a includeFile=(
-    'README.json'
-    'boot.json'
-)
-typeset -a additionFileBuf=()
-typeset -a additionBinaryFileBuf=()
-typeset -a additionDirBuf=()
-typeset -a typeBuf=()
+typeset -a includeFile=()
 
 for i ({$#ModeListData..1}) {
     typeset -a array=(${(s:;:)${ModeListData[${i}]}})
     ModeListFromName+=${array[1]}
-    ModeList[${array[1]},enable]=$array[2]
     ModeList[${array[1]},from]=$array[3]
 }
 
-print "# DoL_Integrated_Graphic_Pack\n" > README.md
+mkdir -p out
 
-for i ({$#ModeListFromName..1}) {
-    typeset name=${ModeListFromName[${i}]}
-    print "\- ${name}
-\- from: ${ModeList[${name},from]}
-" >> README.md
+function runTasks() {
+    typeset -a EnableList=()
+    for i ({$#1..1}) {
+        if [[ ${1[${i}]} == 1 ]] {
+            EnableList+=${ModeListFromName[-${i}]}
+        }
+    }
+
+    rm -r build
+    mkdir -p build/img.d
+
+    for task (task.d/*) {
+        typeset log_header="[Task][$(print ${task:t:r} | sed -n -E -e 's/^[0-9]+_//p' )]"
+        if [[ ${task:e} == 'task-collect' ]] {
+            for func (${task}/func.d/*) { source $func }
+            source ${task}/consum.zsh
+            for func (${task}/func.d/*) { unfunction ${func:t:r} }
+        } else {
+            source ${task}
+        }
+    }
+
+    typeset log_header="[Package]"
+    log i "开始打包..."
+    (
+        typeset filePath="../out/DoL_Integrated_Graphic_Pack-v${version}-${1}.mod.zip"
+        cd build
+        [[ -f ${filePath} ]] && rm $filePath
+        zip -JqrX9 ${filePath} $includeFile
+    )
 }
 
-#print -a -C 2 ${(kv)ModeList}
-
-function genImgFileListFile() {
-    typeset log_header="[genImgFileListFile]"
-    log i "构建 ${1}..."
-    typeset -a list=(img.d/${1}/img/**/*(.))
-
-    list=(${list#"img.d/${1}/"})
-    list=(${list/#/\\t\"})
-    list=(${list/%/\",})
-    list[-1]=${list[-1]/%,/}
-
-    log i "输出到 imgFileListFile.d/${1}.json"
-    print -x 1 -l -n '[' $list ']' > img.d/${1}/imgFileList.json
-
-    additionFileBuf+="img.d/${1}/imgFileList.json"
-    additionDirBuf+="img.d/${1}/img"
-}
-
-function genType() {
-    typeset log_header="[genType]"
-    typeBuf+="\t\t\t\t\t{
-\t\t\t\t\t\t\"type\": \"${1}\",
-\t\t\t\t\t\t\"imgFileListFile\": \"img.d/${1}/imgFileList.json\"
-\t\t\t\t\t},"
-    log i "已加入 ${1} 到缓冲区"
-}
-
-#genType $ModeListFromName[1]
-
-for name (${ModeListFromName}) {
-    genImgFileListFile $name
-    genType $name
-}
-
-log i "开始合并缓冲区..."
-
-typeBuf[-1]="${typeBuf[-1]/%,/}"
-
-includeFile+=($additionFileBuf)
-includeFile+=($additionBinaryFileBuf)
-includeFile+=(${additionDirBuf/%/'/'})
-
-additionFileBuf=(${additionFileBuf/#/"\t\t\""})
-additionFileBuf=(${additionFileBuf/%/\",})
-additionFileBuf[-1]="${additionFileBuf[-1]/%,/}"
-
-additionBinaryFileBuf=(${additionBinaryFileBuf/#/"\t\t\""})
-additionBinaryFileBuf=(${additionBinaryFileBuf/%/\",})
-additionBinaryFileBuf[-1]="${additionBinaryFileBuf[-1]/%,/}"
-
-additionDirBuf=(${additionDirBuf/#/"\t\t\""})
-additionDirBuf=(${additionDirBuf/%/\",})
-additionDirBuf[-1]="${additionDirBuf[-1]/%,/}"
-
-
-typeset -a bootBuf=(
-    "{"
-    "\t\"name\": \"DoL_Integrated_Graphic_Pack\","
-    "\t\"version\": \"0.1.0\","
-    "\t\"styleFileList\": [],"
-    "\t\"scriptFileList\": [],"
-    "\t\"tweeFileList\": [],"
-    "\t\"imgFileList\": [],"
-    "\t\"additionFile\": ["
-)
-bootBuf+=($additionFileBuf)
-bootBuf+=(
-    "\t],"
-    "\t\"additionBinaryFile\": ["
-)
-bootBuf+=($additionBinaryFileBuf)
-bootBuf+=(
-    "\t],"
-    "\t\"additionDir\": ["
-)
-bootBuf+=($additionDirBuf)
-bootBuf+=(
-    "\t],"
-    "\t\"addonPlugin\": ["
-    "\t\t{"
-    "\t\t\t\"modName\": \"BeautySelectorAddon\","
-    "\t\t\t\"addonName\": \"BeautySelectorAddon\","
-    "\t\t\t\"modVersion\": \"^2.1.0\","
-    "\t\t\t\"params\": {"
-    "\t\t\t\t\"types\": ["
-)
-bootBuf+=($typeBuf)
-bootBuf+=(
-    "\t\t\t\t]"
-    "\t\t\t}"
-    "\t\t}"
-    "\t],"
-    "\t\"dependenceInfo\": ["
-    "\t\t{"
-    "\t\t\t\"modName\": \"ModLoader\","
-    "\t\t\t\"version\": \"^2.18.3\""
-    "\t\t},"
-    "\t\t{"
-    "\t\t\t\"modName\": \"GameVersion\","
-    "\t\t\t\"version\": \"^0.5.0.6\""
-    "\t\t},"
-    "\t\t{"
-    "\t\t\t\"modName\": \"BeautySelectorAddon\","
-    "\t\t\t\"version\": \"^2.1.0\""
-    "\t\t}"
-    "\t]"
-    "}"
-)
-
-log i "将缓冲区写入到文件"
-print -x 1 -l -n $bootBuf > boot.json
-
-log i "开始打包..."
-#zip -r "../mods/DoL_Integrated_Graphic_Pack.mod.zip" $includeFile
+runTasks "11111111"
